@@ -1,0 +1,258 @@
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+import os
+
+class NESFileDecoder:
+    def __init__(self, rom_path):
+        self.rom_path = rom_path
+        self.prg_size = 0
+        self.chr_size = 0
+        self.prg_buffer = bytearray()
+        self.chr_buffer = bytearray()
+    
+    def decode_rom(self):
+        """Decode ROM file"""
+        try:
+            with open(self.rom_path, "rb") as fp:
+                # Read header
+                header = fp.read(16)
+                
+                # Check NES signature
+                if header[0:4] != b'NES\x1A':
+                    return False, "Invalid NES file signature"
+                
+                # Get sizes
+                self.prg_size = header[4] * 16384  # 16KB
+                self.chr_size = header[5] * 8192   # 8KB
+                
+                # Read PRG data
+                self.prg_buffer = bytearray(fp.read(self.prg_size))
+                
+                # Read CHR data
+                if self.chr_size > 0:
+                    self.chr_buffer = bytearray(fp.read(self.chr_size))
+                
+                return True, "ROM successfully decoded"
+                
+        except Exception as e:
+            return False, f"Error: {str(e)}"
+    
+    def save_files(self, output_dir):
+        """Save PRG and CHR files"""
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # Save PRG
+            prg_path = os.path.join(output_dir, "PRG.prg")
+            with open(prg_path, "wb") as f:
+                f.write(self.prg_buffer)
+            
+            # Save CHR
+            chr_path = os.path.join(output_dir, "CHR.chr")
+            if self.chr_size > 0:
+                with open(chr_path, "wb") as f:
+                    f.write(self.chr_buffer)
+            
+            return True, f"Files saved to: {output_dir}"
+            
+        except Exception as e:
+            return False, f"Save error: {str(e)}"
+
+class NESGUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("NES ROM Decoder")
+        self.root.geometry("600x400")
+        
+        self.decoder = None
+        self.setup_ui()
+    
+    def setup_ui(self):
+        # Main frame
+        main_frame = ttk.Frame(self.root, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Title
+        title_label = ttk.Label(main_frame, text="NES ROM Decoder", 
+                               font=("Arial", 16, "bold"))
+        title_label.pack(pady=10)
+        
+        # Open file button
+        open_frame = ttk.Frame(main_frame)
+        open_frame.pack(fill=tk.X, pady=10)
+        
+        ttk.Button(open_frame, text="Open NES File", 
+                  command=self.open_file).pack(side=tk.LEFT)
+        
+        self.file_label = ttk.Label(open_frame, text="No file selected")
+        self.file_label.pack(side=tk.LEFT, padx=10)
+        
+        # ROM information
+        info_frame = ttk.LabelFrame(main_frame, text="ROM Information", padding="10")
+        info_frame.pack(fill=tk.X, pady=10)
+        
+        self.info_text = tk.Text(info_frame, height=8, width=60)
+        self.info_text.pack(fill=tk.BOTH, expand=True)
+        
+        # Action buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill=tk.X, pady=10)
+        
+        ttk.Button(button_frame, text="Decode ROM", 
+                  command=self.decode_file).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(button_frame, text="Save Files", 
+                  command=self.save_files).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(button_frame, text="Clear All", 
+                  command=self.clear_all).pack(side=tk.LEFT, padx=5)
+        
+        # Status bar
+        self.status_var = tk.StringVar(value="Ready to work")
+        status_bar = ttk.Label(main_frame, textvariable=self.status_var, 
+                              relief=tk.SUNKEN, anchor=tk.W)
+        status_bar.pack(fill=tk.X, side=tk.BOTTOM)
+    
+    def open_file(self):
+        """Open file via dialog window"""
+        filename = filedialog.askopenfilename(
+            title="Select NES ROM File",
+            filetypes=[
+                ("NES ROM files", "*.nes"),
+                ("All files", "*.*")
+            ]
+        )
+        
+        if filename:
+            self.file_label.config(text=os.path.basename(filename))
+            self.decoder = NESFileDecoder(filename)
+            self.status_var.set(f"File opened: {os.path.basename(filename)}")
+            
+            # Show basic information
+            self.show_file_info(filename)
+    
+    def show_file_info(self, filename):
+        """Show file information"""
+        file_size = os.path.getsize(filename)
+        info = f"File name: {os.path.basename(filename)}\n"
+        info += f"File size: {file_size} bytes\n"
+        info += f"Full path: {filename}\n\n"
+        info += "Press 'Decode ROM' to analyze"
+        
+        self.info_text.delete(1.0, tk.END)
+        self.info_text.insert(1.0, info)
+    
+    def decode_file(self):
+        """Decode selected file"""
+        if not self.decoder:
+            messagebox.showwarning("Warning", "Select a file first")
+            return
+        
+        success, message = self.decoder.decode_rom()
+        
+        if success:
+            # Show detailed information
+            info = f"File: {os.path.basename(self.decoder.rom_path)}\n"
+            info += "✓ Valid NES ROM\n\n"
+            info += f"PRG size: {self.decoder.prg_size} bytes\n"
+            info += f"CHR size: {self.decoder.chr_size} bytes\n"
+            info += f"PRG banks: {self.decoder.prg_size // 16384}\n"
+            info += f"CHR banks: {self.decoder.chr_size // 8192}\n\n"
+            info += "Press 'Save Files' to export"
+            
+            self.info_text.delete(1.0, tk.END)
+            self.info_text.insert(1.0, info)
+            self.status_var.set("ROM successfully decoded")
+            
+            messagebox.showinfo("Success", message)
+        else:
+            messagebox.showerror("Error", message)
+            self.status_var.set("Decoding error")
+    
+    def save_files(self):
+        """Save decoded files"""
+        if not self.decoder or self.decoder.prg_size == 0:
+            messagebox.showwarning("Warning", "Decode ROM first")
+            return
+        
+        # Select folder for saving
+        output_dir = filedialog.askdirectory(title="Select folder for saving")
+        
+        if not output_dir:
+            return
+        
+        success, message = self.decoder.save_files(output_dir)
+        
+        if success:
+            # Show information about saved files
+            info = self.info_text.get(1.0, tk.END).strip()
+            info += f"\n\n✓ Files saved:\n"
+            info += f"PRG.prg - {self.decoder.prg_size} bytes\n"
+            if self.decoder.chr_size > 0:
+                info += f"CHR.chr - {self.decoder.chr_size} bytes\n"
+            info += f"Folder: {output_dir}"
+            
+            self.info_text.delete(1.0, tk.END)
+            self.info_text.insert(1.0, info)
+            
+            self.status_var.set("Files successfully saved")
+            messagebox.showinfo("Success", message)
+        else:
+            messagebox.showerror("Error", message)
+            self.status_var.set("Save error")
+    
+    def clear_all(self):
+        """Clear all data"""
+        self.decoder = None
+        self.file_label.config(text="No file selected")
+        self.info_text.delete(1.0, tk.END)
+        self.status_var.set("Ready to work")
+        messagebox.showinfo("Cleared", "All data cleared")
+
+# Simplified GUI version (if minimalistic is needed)
+class SimpleNESGUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Simple NES Decoder")
+        self.root.geometry("400x300")
+        
+        ttk.Button(root, text="Open NES File", 
+                  command=self.open_and_decode).pack(pady=20)
+        
+        self.text = tk.Text(root, height=10)
+        self.text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+    
+    def open_and_decode(self):
+        filename = filedialog.askopenfilename(filetypes=[("NES files", "*.nes")])
+        if not filename:
+            return
+        
+        decoder = NESFileDecoder(filename)
+        success, message = decoder.decode_rom()
+        
+        if success:
+            # Automatically save to folder with source file
+            output_dir = os.path.splitext(filename)[0] + "_extracted"
+            decoder.save_files(output_dir)
+            
+            info = f"File: {filename}\n"
+            info += f"PRG: {decoder.prg_size} bytes\n"
+            info += f"CHR: {decoder.chr_size} bytes\n"
+            info += f"Saved to: {output_dir}"
+            
+            self.text.delete(1.0, tk.END)
+            self.text.insert(1.0, info)
+            
+            messagebox.showinfo("Done", "Files successfully extracted!")
+        else:
+            messagebox.showerror("Error", message)
+
+# Run application
+if __name__ == "__main__":
+    root = tk.Tk()
+    
+    # Choose interface:
+    app = NESGUI(root)           # Full version with buttons
+    # app = SimpleNESGUI(root)   # Simplified version
+    
+    root.mainloop()
